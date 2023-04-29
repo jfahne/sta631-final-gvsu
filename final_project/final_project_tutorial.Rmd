@@ -1,0 +1,976 @@
+---
+title: "STA 631 - Final Project Tutorial"
+author: "Joseph Fahnestock"
+date: "2023-04-27"
+output: learnr::tutorial
+runtime: shiny_prerendered
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE,
+	root.dir = "final_project"
+)
+library(learnr)
+```
+
+## So You Took A Class With Bradford?
+
+You made a wise choice. The freedom to learn in ways that suit you best is what
+has made the courses I have taken with Bradford some of my favorites at GVSU. It
+is difficult to know as you plan for the end of a semester what a satisfactory 
+project could look like. What does it mean to demonstrate the course objectives?
+How do you take these little chunks of knowledge you have mined and refine that
+into a finished product? Most importantly, what will you wear?
+
+![](https://www.youtube.com/watch?v=oYhlpV8g2Pc)
+
+## Concocting A Project
+
+### Where To Start
+While the stated purpose of this end of semester project is to demonstrate 
+mastery of the course objectives, my approach is to start with a question I want
+to answer. Question in hand, I then reflect on whether the tools I am expected
+to understand are suited to answering my question. In the case of this course as
+taught in Winter 2023, the course objectives include:
+
+* Describe probability as a foundation of statistical modeling, including inference 
+  and maximum likelihood estimation
+* Determine and apply the appropriate generalized linear model for a specific data context
+* Conduct model selection for a set of candidate models
+* Communicate the results of statistical models to a general audience
+* Use programming software (i.e., R) to fit and assess statistical models
+
+We would be looking for questions which lend themselves well to Generalized Linear
+Models. This is a *broad* family of models, so most questions are going to be
+on the table. The important caveat is even with an interesting question and a 
+rough idea of how you can use the required tools, you still need sufficient data.
+
+### Data Sourcing
+"The journey of one-thousand records begins with ~~a single~~ several queries."
+
+It is unlikely that you will find the exact data you want on the first try or in
+a single, neatly packaged repository. You may need to pull data from multiple
+sources and will almost certainly have to preprocess your data. Why bother with
+this when you could find neatly packaged datasets all over the internet? 
+
+If you find yourself working with data that you did not need to preprocess, you are 
+probably not answering a very original question. I would love to see what you
+might be able to contribute to the wealth of analyses on Titanic data. The reason
+to ask questions which require elbow grease to find data for is that in 
+preprocessing, you will spend a great deal of time coming to understand your data
+and the models you are investigating. Checking that your data satisfies model
+assumptions and that any kinds of test, validate, and train splits you construct
+are appropriate are great ways to communicate the understanding required by
+the course objectives.
+
+Assuming you agree, even begrudgingly, you might wonder where you could find data?
+This depends on your question but here are some great resources:
+
+* [Kaggle](www.kaggle.com/datasets) - Good for finding less raw data or looking at
+  data sources used to generate the datasets
+* [US Gov Data](https://data.gov/) - A huge directory of government produced data
+* [Open Data Network](https://www.opendatanetwork.com/) - A nice search engine for
+  opensource datasets
+
+You can find data all over the place, but I like the above resources as a starting
+point for their generality and ease of use.
+
+## Example Project Idea
+### Concoting An Example Project
+Allow me to peel back the curtain a bit and explain that this tutorial is itself
+a final project for Bradford's STA 631 course. Extremely meta, I know. I was following
+the same process I shared and my initial question was, "How likely am I to have
+unsubscribed from an email list after I am no longer interested in it?" I have
+had the same gmail account since 2010 (joeyfahnestock@gmail.com hit me up with cat
+memes) and it currently has over 46,414 unread messages. I am not an inbox zero
+person. Pulling down and working with such a large dataset proved difficult.
+There was a lot of text processing and it seemed that the gigabytes of email data
+was a little much for my machine. I decided instead that I would make a tutorial
+on creating a project to learn more about `learnr` and to engage with the course
+community. 
+
+To add a layer to the metatextual nature of this document, my example project will
+answer the question, "What data do people analyze?"
+
+### Data Sourcing
+"What data do people analyze?" is an extremely broad question which leads to an
+important aspect of creating a final project. The question you start with needs to
+be iterated on to enable you to answer it. Ideally, you start with a broad question
+and fight reality to maintain the original scope of the question, only qualifying
+it when necessary. It would be a lengthy task trying to source enough analyses and
+datasets to answer the broad form of this question. I will make the small qualification
+that I want to know, "What data do people create datasets on Kaggle to analyze?"
+
+This is still a broad question with rich paths to investigate, but data sourcing is
+now much more straightforward.
+[Kaggle has a great API for developers to interface with](https://www.kaggle.com/docs/api)
+According to Kaggle there are 215,260 public datasets. The Kaggle API returns 20
+records per call, so I wrote this small python script to convert the 
+[paginated](https://en.wikipedia.org/wiki/Pagination#In_web_browsers) data into
+one big CSV. In tinkering, I discovered that Kaggle maxes out the pages you can view
+from their server side code to 500. Their API also lets you sort the datasets by
+some predefined metrics, and I decided to sort by the most upvoted as these are
+likely the most analyzed datasets on Kaggle.
+
+```{python source_kaggle_datasets, eval=FALSE, python.reticulate=FALSE}
+import pandas as pd
+import kaggle
+kaggle.api.authenticate()
+print("API REQUESTS BEGINNING")
+try:
+    for i in range(1, 501):
+        for dataset in kaggle.api.dataset_list(page = i, sort_by="votes"):
+            datasets.append(dataset)
+except kaggle.rest.ApiException:
+    print(len(datasets)//20)
+fields = [
+            'ref', 'title', 'size', 'lastUpdated', 'downloadCount',
+            'voteCount', 'usabilityRating'
+        ]
+print("API REQUESTS COMPLETE")
+print("DATAFRAME CREATION")
+dataset_fp = pd.DataFrame([[getattr(i, f) for f in fields] for i in datasets], columns=fields)
+print("DATAFRAME CREATED")
+print("WRITE OUT")
+dataset_fp.to_csv("kaggle.csv.zip", index=None, compression="zip")
+print("WRITE COMPLETE")
+print("Goodbye!")
+```
+
+We can read the data into R and take a peek at the data which will *NEED* some
+preprocessing.
+
+```{r peek_at_api_data}
+library("readr")
+kaggle_data_raw = read_csv("kaggle.csv.zip")
+head(kaggle_data_raw)
+```
+
+With nearly, ten thousands rows there is bound to be something interesting to find.
+The `ref` column seems to just be the username and dataset title combined, so we
+can probably drop that column and the other columns will need to be processed to
+be more usable in an analysis.
+
+
+## Creating A Plan To Align Your Project With Course Objectives
+In general, the ideal way to construct a project is to discuss:
+
+* The motivating question in an introduction
+* The sources you used to produce the data
+* Cleaning conducted on the data
+* Exploratory analyses
+* Modeling steps
+* A conclusion that answers your question
+
+This is better practice than listing out the individual course objectives and trying
+to hit each of them individually. Adding a reflection to your project report would
+allow you to point out the specific portions of your work that show you have met
+the objectives. This being a project within a project about how to do projects allows
+me some wiggle room to gracefully point out how I am meeting the course objectives
+without needing a reflection.
+
+### The Plan
+The above is a good skeleton for a project report, but the actual process of analysis
+is more of an iterative loop:
+
+* Explore the data and make a hypothesis
+* Model the data to test our hypothesis
+* Reflect on whether the model provides a believable answer to our question
+
+These steps encapsulate a messier combination of cleaning, analyzing, testing, and
+reworking our question when needed. I am going to pare away some of these less
+fruitful iterations I went through for the sake of brevity and show three iterations
+for my example project, but take my word that depending on how you count it I went
+through dozens.
+
+## Example Project: Iteration 0
+### Exploring Uncharted Territory
+With our plan in hand, let's start with the more obvious preprocessing steps and
+exploratory analyses. For a refresher our data looks like this:
+
+```{r api_data_refresher}
+head(kaggle_data_raw)
+```
+
+We need to have the data in a format that's usable and we do not need to retain
+duplicate data. We can see that some needed steps include:
+
+* `ref` can be dropped as it duplicates the `title` column
+* `title` will have only alphanumeric characters retained and making all
+  letters lowercase to standardize the strings
+* `size` needs to be converted to a standard unit of bytes so that the column can
+  just be an integer rather than a string
+* `lastUpdated` can be converted from a datetime object to how many days before
+  the date they were accessed (April 27, 2023) so we have a column of integers
+* `downloadCount`, `voteCount`, and `usabilityRating` will be left alone until we 
+  do some exploration
+
+```{r it0_cleaning0}
+library(dplyr) # Grammar for data transformation
+library(stringr) # String manipulation tool
+library(lubridate) # Datetime convenience library
+
+unique(str_replace_all(kaggle_data_raw$size, "[^\\P{Nd}]", "")) # Show how big files can get
+
+kaggle_cleaned = kaggle_data_raw %>% 
+  select(-ref) %>% 
+  mutate(title = str_remove_all(title, "[^[:alnum:]^[:space:]]") %>% tolower()) %>% 
+  mutate(size = case_when(
+    str_detect(size, "KB$") ~ str_replace(size, "KB$", "") %>% as.numeric() * 1024,
+    str_detect(size, "MB$") ~ str_replace(size, "MB$", "") %>% as.numeric() * 1024^2,
+    str_detect(size, "GB$") ~ str_replace(size, "GB$", "") %>% as.numeric() * 1024^3,
+    str_detect(size, "B$") ~ str_replace(size, "B$", "") %>% as.numeric(),
+    TRUE ~ NA_real_
+  )) %>% 
+  mutate(last_updated = -difftime(ymd_hms(lastUpdated), 
+                                 ymd("2023-04-27"), 
+                                 units="days") %>% as.numeric()) %>% 
+  rename(download_count = downloadCount,
+         vote_count = voteCount,
+         usability_rating = usabilityRating) %>% 
+  select(title, size, last_updated, download_count, vote_count, usability_rating)
+
+head(kaggle_cleaned)
+```
+
+True to my pythonic ways, I snuck in changing all the multi-word column names to snake case.
+The data looks much cleaner for some exploratory analysis. Analyses can be visual,
+statistical, or both. For the titles, I am going to use a word cloud to identify
+any especially common words in our data.
+
+```{r it0_title_wordcloud}
+library(tidytext) # tokenize (split up) strings for us
+library(wordcloud) # create word clouds
+
+title_words = kaggle_cleaned %>% 
+  unnest_tokens(word, title)
+
+title_word_freq = title_words %>% count(word, sort = TRUE)
+
+wordcloud(words = title_word_freq$word,
+          freq = title_word_freq$n,
+          scale = c(5, 0.5),
+          min.freq = 1,
+          max.words = 100,
+          random.order = FALSE,
+          rot.per = 0.3,
+          colors = brewer.pal(10, "Dark2"))
+```
+
+This is pretty cool except that the most common words are "dataset" and "data" along
+with [stop words](https://en.wikipedia.org/wiki/Stop_word) like "the" which are not
+super useful for our brainstorming. Let's remove the stop words and the words "data" 
+and "dataset" explicitly from our analysis and try again.
+
+```{r it0_rm_stopwords}
+title_words = kaggle_cleaned %>%
+  mutate(title = str_remove_all(title, "\\bdata\\b")) %>% 
+  mutate(title = str_remove_all(title, "\\bdataset\\b")) %>% 
+  unnest_tokens(word, title) %>% 
+  anti_join(stop_words)
+
+title_word_freq = title_words %>% count(word, sort = TRUE)
+
+wordcloud(words = title_word_freq$word,
+          freq = title_word_freq$n,
+          scale = c(2, 0.25),
+          min.freq = 1,
+          max.words = 100,
+          random.order = FALSE,
+          rot.per = 0.3,
+          colors = brewer.pal(10, "Dark2"))
+```
+
+Now we are talking! The saturation of Covid analyses abides. I hope it is different
+for you dear reader of the future. We also see "classification", "detection", and 
+"prediction" rank pretty highly suggesting that a lot of these datasets were created
+with a specific kind of analysis in mind.
+
+Let's do some standard statistical analyses on our numeric columns.
+
+```{r it0_stat_analyses}
+library(skimr) # Tidy summary stats
+kaggle_cleaned %>% 
+  select_if(is.numeric) %>% 
+  skim()
+```
+
+`skimr` is so nice. Make sure to highlight your way over if you don't see a slider bar
+to see the little histogram it generates. We have no missing values, but there is some clear evidence of skewing
+in all of our columns. Let's make some histograms to see that more explicitly.
+
+```{r it0_histogram_}
+library(ggplot2)
+ggplot(kaggle_cleaned, aes(size)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(last_updated)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(download_count)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(vote_count)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(usability_rating)) + geom_histogram()
+```
+
+We can confirm the significant skew we saw in the `skimr` output with all but
+`usability_rating` having right skews and `usability_rating` having a left skew.
+We will need to keep that in mind when we start modeling as we will likely have to
+transform the data to fit a GLM model. 
+
+This takes us to the important step of what we want to hypothesize as an answer
+to our question. Keeping in mind our broad goal, "What data do people create 
+datasets on Kaggle to analyze?" We might consider naively, for the sake of our 
+overarching pedagogical goals, that the columns need no further preprocessing. 
+We will just fit the full model taking `votes` as the response. Our hypothesis would
+be, "A dataset which people want to analyze on Kaggle will have a high number of upvotes 
+and we can predict those upvotes using the other data provided with the API responses
+listing datasets."
+
+### Naive Bayes Modeling. Hold The Bayes.
+We have made our decisions and chosen our model, sort of. We know it needs to be
+a Generalized Linear Model, and I assume that by the end of this course you are 
+aware that GLMs require a linking function depending on the model design. In our
+case, we have a categorical predictor `title` and four numerical predictors. If we
+want to model `vote_count` as the response, we could use gamma regression which is used
+for modeling positive, continuous responses with heavy right skew. Our `vote_count`
+model checks all the boxes *except* it is skewed to the left. We could try to finesse
+it a bit, but the better model to use while still being a little naive is the
+negative-binomial distribution regression. We can use `tidymodels` to make the setup
+of our train and test split and cross validation more straight forward. 
+
+```{r it0_naive_modeling, eval=FALSE}
+library(tidymodels) # Simplify model design specifications
+library(parsnip)
+library(MASS)
+set.seed(42723) # Ensure you see the same "random" results I do
+split_idx = initial_split(kaggle_cleaned)
+
+# Test / Train split
+kaggle_train = training(split_idx)
+kaggle_test = testing(split_idx)
+
+# Get an estimate of theta
+
+estimate_theta_mod = glm.nb(vote_count ~ ., data=kaggle_train, maxit=10)
+
+# Define the recipe
+nb_recipe =  recipe(vote_count ~ ., data = kaggle_train) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_scale(all_predictors()) %>% 
+  step_center(all_predictors())
+
+# Define the model specification
+nb_spec =  linear_reg() %>% 
+  set_engine("glm", family = negative.binomial(estimated_theta_mod$theta), control = list(maxit = 10)) %>% 
+  set_mode("regression")
+
+# Combine the recipe and model specification into a workflow
+nb_wf =  workflow() %>% 
+  add_recipe(nb_recipe) %>% 
+  add_model(nb_spec)
+
+# Fit the model using cross-validation
+cv_results =  nb_wf %>% 
+  fit_resamples(
+    resamples = vfold_cv(kaggle_train, v = 5),
+    metrics = metric_set(rmse, rsq),
+    control = control_resamples(save_pred = TRUE)
+  )
+
+# Extract the best model and re-fit it on the full training set
+best_model = select_best(cv_results, "rmse")
+final_fit = best_model$workflow %>% fit(data = kaggle_train)
+
+# Use the model to predict on the test data
+pred = final_fit %>% predict(kaggle_test)
+
+# Evaluate the model's performance
+metrics(pred, truth = kaggle_test$vote_count)
+```
+
+This model is not going to work. My computer is fighting for its life. With only
+10 iterations of `glm.nb` towards an estimate of the dispersion parameter, it is
+unlikely that it was a great estimate. Even with only ten iterations I could not execute.
+This is largely do to our mishandling of our categorical variable and a bit to
+do with the overdispersion in our numerical data.It's also because of the size of our
+dataset and the Maximum Likelihood Estimation being used to optimize the dispersion
+parameter. We can do better with some more well thought out preprocessing.
+Let's do another iteration with feeling!
+
+## Reflection On Iteration 0
+
+Yes, I do think I have a good grasp on the following:
+
+* Describe probability as a foundation of statistical modeling, including inference 
+  and maximum likelihood estimation
+* Determine and apply the appropriate generalized linear model for a specific data context
+* Conduct model selection for a set of candidate models
+* Communicate the results of statistical models to a general audience
+* Use programming software (i.e., R) to fit and assess statistical models
+
+The first iteration alone showed my grasp of probability as a foundation of statistical
+modeling. Why cross-validate? Why give up on trying to make `glm.nb` work? I understand
+that MLE required to regress an optimal value of the dispersion parameter is a series
+of matrix multiplication which even in the best case is bounded by dimensions of 
+our model design matrix. With a categorical variable that consists of around 10,000
+unique values that will lead inevitably to a slow, cumbersome calculation which makes
+any normal computer sound like a boxfan.
+
+The negative binomial regression is appropriate for right skewed data which is overdispersed
+but does not have an excess of zero values. It is just tough to fit without some additional
+adjustments. 
+
+The cross validation method is one way to conduct model selection by training on different
+resamplings of a train split and choosing optimal coefficients. There are further ways
+to conduct hyperparameter tuning which is not happening with our current design matrix.
+
+I like to think that while I have not provided results yet this model was interesting to see
+and I am communicating in a way that is effective even for a general audience. The
+results of the exploratory analysis having visual components is important to have
+an audience actually pay attention.
+
+I definitely need to have a model that works for the final bullet but we are getting there.
+
+
+## Example Project: Iteration 1
+Let's set some goals here. We need to simplify our categorical variable--a lot.
+We need to consider ways to also simplify our numerical variables. If we can, an
+ideal plan of action would be a model which also has more chance of running with
+more intensive model selection methods. We will begin with some further exploratory
+analysis and cleaning
+
+### Exploring Calmer Waters
+
+Let's start with the beefier of the two problems. How do we wrangle our categorical
+variable into something actually usable? We need to (not being facetious) categorize it.
+Meaning that we need to find some way to process the records and assign them to one of
+`n` categories where `n` is significantly smaller than 10,000. I think ideally less
+than ten. To do this, I am going to flex some NLP muscle a bit. The other option
+would be to use some simpler text processing and similarity methods, but why do that
+when I could ask my friend BERT?
+
+```{r it1_title_haircut, eval=FALSE}
+# Retrieved in part from https://www.kaggle.com/code/pehahn/basic-bert-with-r/script
+reticulate::py_install('transformers', pip = TRUE)
+transformer = reticulate::import('transformers')
+tf = reticulate::import('tensorflow')
+builtins = reticulate::import_builtins() #built in python methods
+tokenizer = transformer$AutoTokenizer$from_pretrained('cardiffnlp/tweet-topic-21-multi')
+model = transformer$TFAutoModelForSequenceClassification$from_pretrained('cardiffnlp/tweet-topic-21-multi')
+class_mapping = model$config$id2label
+text = kaggle_cleaned$title
+tokens = tokenizer(text, truncation=TRUE, padding=TRUE,max_length=250L, return_tensors="tf")
+results = model(tokens)
+
+numpy = reticulate::import("numpy") # More python
+scipy.special = reticulate::import("scipy.special") # More python
+
+scores = numpy$array(results$logits) # Create an array from tensorflow object
+write_csv(scores, "scores.csv") # Write to a csv to prevent needing to rerun model
+```
+
+```{r it1_spare_computer}
+reticulate::py_install('scipy', pip = TRUE) # Setup some python utilities
+numpy = reticulate::import("numpy") # More python
+scipy.special = reticulate::import("scipy.special") # More python
+
+class_mapping = c("arts_&_culture","business_&_entrepreneurs","celebrity_&_pop_culture",
+                  "diaries_&_daily_life","family","fashion_&_style","film_tv_&_video",
+                  "fitness_&_health","food_&_dining","gaming","learning_&_educational",
+                  "music","news_&_social_concern","other_hobbies","relationships",
+                  "science_&_technology","sports","travel_&_adventure","youth_&_student_life")
+scores = as.data.frame(read_csv("scores.csv", col_types="dd"))
+expit_scores = 1/(1 + exp(-scores)) # Convert scores to probabilities via expit function
+score_predictions = as.data.frame(expit_scores >= 0.5) # Use a threshold of 0.5 confidence to assign class
+
+select_class = function(mask, classes) {
+  ifelse(sum(unlist(mask))>0, unlist(classes[mask][1]), "No Class")
+}
+pred_classes = unlist(apply(score_predictions, 1, select_class, classes=class_mapping))
+kaggle_cleaned$title_class = pred_classes
+head(kaggle_cleaned)
+```
+
+Whoa! What just happened and who is BERT? BERT is a bidirectional encoder representation
+from transformers. It is an incredible natural language processing model and we
+used a [pretrained model from HuggingFace's community.](https://huggingface.co/cardiffnlp/tweet-topic-21-multi)
+It was originally trained to classify the topic of tweets with a corpus of over
+11000 tweets used to tune another model, TimeLMs, which was trained on over
+124 million tweets. All that going on and it still was able to run when `glm.nb`
+would not! That's because throughout I used `reticulate` to make calls to some
+deep learning and numerics libraries which were able to nearly blow up my computer
+by maxing out CPU utilization. It was scary to watch. The result is not flawless
+though. Let's explore our transformed data some more to see what else we might need
+to do.
+
+```{r it1_your_bert_is_a_wonderland}
+title_class_bars = kaggle_cleaned %>% 
+  select(title_class) %>% 
+  group_by(title_class) %>% 
+  count() %>% 
+  mutate(class_count = n) %>% 
+  select(title_class, class_count) %>% 
+  arrange(desc(class_count))
+
+ggplot(data=title_class_bars, aes(x=reorder(title_class,class_count), 
+                                  y=class_count, fill=title_class)) + 
+  geom_bar(stat="identity") +
+  xlab("title_class") +
+  theme(axis.text.x = element_blank(),
+        axis.ticks.x = element_blank(),
+        legend.key.height = unit(0.45,'cm'),
+        legend.text = element_text(size=8))+
+  scale_fill_discrete(breaks=levels(with(title_class_bars,
+                                         reorder(title_class, class_count))))
+```
+
+With this chart, it's clear that a good portion of the data did not get classified.
+With almost 2000 of our under 10000 records, we have to decide how to handle this
+missing data. For now, I think we can again drop it (naively). Let's try to clean
+up our numerical data. We have a lot of numerical data where the specific value
+doesn't really matter as much as its rough grouping. Is it very usable data? Is it
+a low number of votes? We can create ordinal categorical variables to simplify
+some of our modeling. Looking back at our project goal, we might think that the
+main point of using `vote_count` is to measure popularity. Why not split `vote_count`
+up into popular and unpopular categories like the social hierarchy of a high school
+in a coming of age film.
+
+```{r it1_hot_or_not}
+library(janitor)
+ggplot(kaggle_cleaned, aes(vote_count)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(log(vote_count))) + geom_histogram()
+ggplot(kaggle_cleaned, aes(log(log(vote_count)))) + geom_histogram()
+ggplot(kaggle_cleaned, aes(sqrt(vote_count))) + geom_histogram()
+MASS::boxcox(kaggle_cleaned$vote_count ~ 1)
+lambda_loglik = MASS::boxcox(kaggle_cleaned$vote_count ~ 1)
+lambda = lambda_loglik$x[which.max(lambda_loglik$y)]
+ggplot(kaggle_cleaned, aes((vote_count^lambda - 1)/lambda)) + geom_histogram(bins=30) + 
+  xlab("BOXCOX(vote_count, lambda = -1/90)")
+ggplot(kaggle_cleaned, aes(qnorm((ifelse(rank(vote_count)/length(vote_count) == 1,
+                                        (rank(vote_count) - 1)/length(vote_count),
+                                         rank(vote_count)/length(vote_count))))))+ 
+  geom_histogram() +
+  xlab("Quantile Transformation(vote_count)")
+
+kaggle_cleaned$vote_count_std = qnorm((ifelse(
+  rank(kaggle_cleaned$vote_count)/length(kaggle_cleaned$vote_count) == 1,
+  (rank(kaggle_cleaned$vote_count) - 1)/length(kaggle_cleaned$vote_count),
+  rank(kaggle_cleaned$vote_count)/length(kaggle_cleaned$vote_count))))
+kaggle_cleaned = kaggle_cleaned %>% 
+  mutate(popularity = ifelse(vote_count_std > mean(vote_count_std),
+                             "Popular",
+                             "Not Popular")) %>% 
+  select(-vote_count_std)
+
+kaggle_cleaned %>% 
+  tabyl(title_class, popularity) %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%
+  adorn_ns()
+```
+
+We tried some different ways to remove the skew from our data but eventually we
+just coerced it to a normal distribution to split it apart. The resulting `popularity`
+column can be seen in the cross-table to be pretty evenly split across all title classes
+other than where we have sparse data. Let's suppose again that we can naively fit
+a model of `popularity` as we have built it. What would our hypothesis be?
+
+I would hypothesize that people creating Kaggle datasets that are larger, more usable,
+and that the topic plays an important role in determining popularity. I think the 
+recency of an update is less important and I think that downloads may be explored as
+a possible second response variable.
+
+### Modeling Coin Tosses But Make It Cool
+
+We have walked our way into a logistic regression which should be interesting to conduct.
+We have a binary response, one nominal predictor, and two numerical predictors we want
+to use. Let's put together a model workflow and see what we can see!
+
+```{r big_ol_log}
+library(tidymodels)
+# Pulling from https://www.tidymodels.org/start/case-study/
+set.seed(42723)
+splits      = initial_split(kaggle_cleaned)
+
+kaggle_other = training(splits)
+kaggle_test  = testing(splits)
+
+val_set = validation_split(kaggle_other, 
+                            prop = 0.80)
+
+lr_mod = logistic_reg(penalty = tune(), mixture = 1) %>% 
+  set_engine("glmnet")
+
+lr_recipe = recipe(popularity ~ title_class + size + usability_rating, data = kaggle_other) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_normalize(all_predictors())
+
+lr_workflow =  workflow() %>% 
+  add_model(lr_mod) %>% 
+  add_recipe(lr_recipe)
+
+lr_reg_grid = tibble(penalty = 10^seq(-4, -1, length.out = 30))
+
+lr_reg_grid %>% top_n(-5)
+lr_reg_grid %>% top_n(5)
+
+lr_res = lr_workflow %>% 
+  tune_grid(val_set,
+            grid = lr_reg_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(roc_auc))
+lr_plot =
+  lr_res %>% 
+  collect_metrics() %>% 
+  ggplot(aes(x = penalty, y = mean)) + 
+  geom_point() + 
+  geom_line() + 
+  ylab("Area under the ROC Curve") +
+  scale_x_log10(labels = scales::label_number())
+
+lr_plot
+
+top_models <-
+  lr_res %>% 
+  show_best("roc_auc", n = 15) %>% 
+  arrange(penalty) 
+top_models
+
+lr_best =
+  lr_res %>% 
+  collect_metrics() %>% 
+  arrange(penalty) %>% 
+  slice(15)
+lr_best
+
+lr_auc = lr_res %>% 
+  collect_predictions(parameters = lr_best) %>% 
+  roc_curve(popularity, .pred_Popular) %>% 
+  mutate(model = "Logistic Regression")
+
+autoplot(lr_auc)
+```
+
+This is an incredibly bad result. It suggests that our data has no power to predict the
+popularity of a dataset from the title classes, usability ratings, and size of the data.
+This can be seen by how closely our model follows the "no-skill" line which reflects
+the cut off for a model to perform better than guessing at random.
+We are on to something though with our response and categorical vectors being more manageable.
+Now the question is finding the right model which calls for some further exploration in
+a final iteration.
+
+## Reflecting On Iteration 1
+
+I was able to better show my understanding of GLMs and some powerful model fitting
+techniques in `tidymodels`. The weakest point (intentionally) so far has been my
+exploratory analysis. With it being loosely put together, I am running into data
+quality issues that are inhibiting an otherwise interesting model. I think the NLP
+application is fun, but it is more of a narrative device to show that bigger hammers
+won't help you screw something in. I think that this is the broader message of the
+course objectives. A statistician should know what tool to use in which situation
+with some expected effect. I think we can squeeze something more useful out of this
+model in a final iteration through proper preprocessing.
+
+## Example Project Iteration 2
+
+### I Came Here To Clean Data And Chew Gum And I Am All Out Of Gum
+
+Hello `summary` my old friend. 
+```{r size_summmary}
+summary(kaggle_cleaned$size)
+```
+
+This is a great example of a simple tool and common sense can improve models. What
+would it mean for a dataset with a zero byte size file to be popular? I don't know
+but in our model it is going to mean nothing.
+
+```{r bang_bye_zeros}
+kaggle_cleaned = kaggle_cleaned %>% filter(size != 0)
+summary(kaggle_cleaned$size)
+```
+
+The zeros are gone and investigating some of the other small values like 4906 reveals
+small but relevant zipped datasets. The next common check is the distribution of the
+data. We have already looked at it, but let's look again along with some typical
+transformations of skewed data. We will also investigate the outliers in the data
+using a boxplot.
+
+```{r size_hists}
+ggplot(data=kaggle_cleaned, aes(y=size)) + geom_boxplot()
+
+ggplot(kaggle_cleaned, aes(size)) + geom_histogram()
+ggplot(kaggle_cleaned, aes(log(size))) + geom_histogram()
+ggplot(kaggle_cleaned, aes(log(log(size)))) + geom_histogram()
+ggplot(kaggle_cleaned, aes(sqrt(size))) + geom_histogram()
+
+kaggle_cleaned$lgsize = log(kaggle_cleaned$size)
+ggplot(data=kaggle_cleaned, aes(y=lgsize)) + geom_boxplot()
+```
+
+We can see that `log(size)` looks normally distributed and when we use `lgsize` in
+a boxplot the data goes from being nearly all outlier to there being no outliers.
+We can do a similar analysis for `usability_rating` only we'll want only usability
+that is great than 0.5 or indicating it's likely to be usable.
+
+```{r usability_score_usable}
+summary(kaggle_cleaned$usability_rating)
+
+kaggle_cleaned = kaggle_cleaned %>% filter(usability_rating > 0.5)
+summary(kaggle_cleaned$usability_rating)
+```
+
+This has removed our zeros, but let's look at some histograms to see how the data
+is distributed.
+
+```{r usability_hists}
+ggplot(kaggle_cleaned, aes(usability_rating)) + geom_histogram(bins=15)
+ggplot(kaggle_cleaned, aes(log(usability_rating))) + geom_histogram(bins=15)
+ggplot(kaggle_cleaned, aes(sqrt(usability_rating))) + geom_histogram(bins=15)
+```
+
+None of the transformations look right because the column has such heavy skew to one.
+It is better to just break this up into near perfect usability and not near perfect.
+
+```{r usability_col}
+kaggle_cleaned = kaggle_cleaned %>% 
+  mutate(usability = cut_number(usability_rating, n=2, labels=c("Usable", "Highly Usable")))
+
+kaggle_cleaned %>% 
+  tabyl(popularity, usability) %>% 
+  adorn_percentages("row") %>%
+  adorn_pct_formatting(digits = 2) %>%  
+  adorn_ns()
+```
+
+This change does not create an explicitly exploitable correlation between the two variables
+but it seems that it may be able to help contribute. Applying this same idea `last_updated`:
+
+```{r recency_is_a_weird_word}
+summary(kaggle_cleaned$last_updated)
+
+kaggle_cleaned = kaggle_cleaned %>% 
+  filter(last_updated > 0)
+
+summary(kaggle_cleaned$last_updated)
+
+ggplot(kaggle_cleaned, aes(last_updated)) + geom_histogram(bins=15)
+ggplot(kaggle_cleaned, aes(sqrt(last_updated))) + geom_histogram(bins=15)
+
+kaggle_cleaned$sqrtlast_updated = sqrt(kaggle_cleaned$last_updated)
+
+ggplot(kaggle_cleaned, aes(y=sqrtlast_updated))+geom_boxplot()
+```
+
+Again we have clean data and we are left with dealing with download count which is
+highly correlated to our response of vote counts. We investigate this relationship
+briefly before deciding to continue.
+
+```{r adding_downloads}
+summary(kaggle_cleaned$download_count)
+
+cor(kaggle_cleaned$download_count, kaggle_cleaned$vote_count)
+
+ggplot(kaggle_cleaned, aes(download_count)) + geom_histogram(bins=30)
+ggplot(kaggle_cleaned, aes(log(download_count))) + geom_histogram(bins=30)
+ggplot(kaggle_cleaned, aes(log(log(download_count)))) + geom_histogram(bins=30)
+ggplot(kaggle_cleaned, aes(sqrt(download_count))) + geom_histogram(bins=30)
+
+kaggle_cleaned %>% 
+  filter(popularity == "Not Popular") %>% 
+  filter(download_count > mean(download_count)) %>% 
+  select(download_count) %>% 
+  count()
+
+kaggle_cleaned %>% 
+  filter(popularity == "Popular") %>% 
+  filter(download_count > mean(download_count)) %>% 
+  select(download_count) %>% 
+  count()
+
+kaggle_cleaned %>% 
+  filter(popularity == "Not Popular") %>% 
+  filter(download_count < mean(download_count)) %>% 
+  select(download_count) %>% 
+  count()
+
+kaggle_cleaned %>% 
+  filter(popularity == "Popular") %>% 
+  filter(download_count < mean(download_count)) %>% 
+  select(download_count) %>% 
+  count()
+```
+
+There's no great way to split up the data via potential response levels. Instead,
+we can use kmeans to engineer a feature which captures a bit about all the columns
+for some subsection of the data.
+
+```{r popular_but_fake}
+library(factoextra)
+kaggle_kmeans_data = kaggle_cleaned %>% 
+  select(vote_count, usability_rating, last_updated, size, download_count) %>% 
+  mutate(across(everything(), scale))
+
+kaggle_kmeans_data %>% 
+  skim()
+
+elbow = fviz_nbclust(kaggle_kmeans_data, kmeans, method="wss")
+elbow$data
+ggplot(data=elbow$data, aes(x=clusters, y=y))+geom_point()
+
+kaggle_km_mod = kmeans(kaggle_kmeans_data, centers=5, nstart=25)
+kaggle_clustered = kaggle_cleaned %>% 
+  mutate(cluster = as.factor(kaggle_km_mod$cluster),
+         popularity = as.factor(popularity),
+         usability = as.factor(usability),
+         title_class = as.factor(title_class))
+```
+
+This creates a nice cluster feature for us to use in our model as a dummy variable
+which only effects the data when turned on. We can also skim the clusters to see
+if there's any interpretable way to describe them.
+
+```{r skim_clusters}
+kaggle_clustered %>% 
+  group_by(cluster) %>% 
+  skim() %>% 
+  arrange(cluster)
+```
+
+There's no obvious groupings but size, votes, and downloads seems to group the data
+a fair bit. We will fit a model with this transformed data and see if we have any
+better performance
+
+### Same Model But Different (Data)
+
+```{r big_ol_log2}
+library(tidymodels)
+library(tidyselect)
+# Pulling from https://www.tidymodels.org/start/case-study/
+set.seed(42723)
+splits      = initial_split(kaggle_clustered)
+
+kaggle_other = training(splits)
+kaggle_test  = testing(splits)
+
+val_set = validation_split(kaggle_other, 
+                            prop = 0.80)
+
+lr_mod = logistic_reg(penalty = tune(), mixture = 1) %>% 
+  set_engine("glmnet")
+
+lr_recipe = recipe(popularity ~ title_class + lgsize + usability + sqrtlast_updated + cluster,
+                   data = kaggle_other) %>% 
+  step_dummy(all_nominal_predictors()) %>% 
+  step_zv(all_predictors()) %>% 
+  step_normalize()
+
+lr_workflow =  workflow() %>% 
+  add_model(lr_mod) %>% 
+  add_recipe(lr_recipe)
+
+lr_reg_grid = tibble(penalty = 10^seq(-4, -1, length.out = 30))
+
+lr_reg_grid %>% top_n(-5)
+lr_reg_grid %>% top_n(5)
+
+lr_res = lr_workflow %>% 
+  tune_grid(val_set,
+            grid = lr_reg_grid,
+            control = control_grid(save_pred = TRUE),
+            metrics = metric_set(roc_auc))
+lr_plot =
+  lr_res %>% 
+  collect_metrics() %>% 
+  ggplot(aes(x = penalty, y = mean)) + 
+  geom_point() + 
+  geom_line() + 
+  ylab("Area under the ROC Curve") +
+  scale_x_log10(labels = scales::label_number())
+
+lr_plot
+
+top_models <-
+  lr_res %>% 
+  show_best("roc_auc", n = 15) %>% 
+  arrange(penalty) 
+top_models
+
+lr_best =
+  lr_res %>% 
+  collect_metrics() %>% 
+  arrange(penalty) %>% 
+  slice(17)
+lr_best
+lr_auc = lr_res %>% 
+  collect_predictions(parameters = lr_best) %>% 
+  roc_curve(popularity, ".pred_Not Popular") %>% 
+  mutate(model = "Logistic Regression")
+
+autoplot(lr_auc)
+```
+
+Our best model has a mean ROC-AUC metric of 0.65 which is pretty great given that
+we were dealing with a 0.5 which was meaningless earlier. This shows us that we have
+a model now which can make some kind of informed guess about a record's popularity.
+We could tinker to try to bring the ROC-AUC above 0.75 but I tried a random forest
+to no avail, so I think this is a nice place to stop.
+
+## Reflecting On Iteration 2
+
+By using more standard preprocessing and common sense fixes, we were able to use 
+our data to squeeze some insight out of the model. We do still need to make a final
+conclusion, but I would say we have hit all the course objectives.
+
+## Concluding Concluding Concluding
+
+I would like to conclude by explaining how to conclude something when you conclude
+your project. I will stop having fun with this meta now. You starting with a question
+lends itself to a nice conclusion which restates the question with a truth value somewhere.
+Our original question, "What data do people create datasets on Kaggle to analyze?"
+The answer is that according to a dataset we built from information about their top
+10,000 records by vote, we can model how likely that dataset is to be popular given
+what we know about it.
+
+We can see from the ROC-AUC curve that around two-thirds of the time our model can
+guess what will be popular and we would like to report
+what it is getting wrong.
+
+```{r confusion}
+lr_preds = lr_res %>% 
+  collect_predictions(parameters = lr_best) %>% 
+  mutate(popularity_preds = ifelse(.pred_Popular >= 0.5, "Popular", "Not Popular"))
+
+fp_index = lr_preds$.row[(lr_preds$popularity_preds != lr_preds$popularity) &
+                           (lr_preds$popularity_preds == "Popular")]
+kaggle_other[fp_index,] %>% 
+  skim()
+
+kaggle_other[fp_index,] %>% 
+  tabyl(title_class) %>% 
+  arrange(n)
+
+fn_index = lr_preds$.row[(lr_preds$popularity_preds != lr_preds$popularity) &
+                           (lr_preds$popularity_preds == "Not Popular")]
+kaggle_other[fn_index,] %>% 
+  skim()
+
+kaggle_other[fn_index,] %>% 
+  tabyl(title_class) %>% 
+  arrange(n)
+```
+
+We can see the model is overly favorable to news and social concerns and non-classified (original) ideas.
+It is generally wrong about business and entrepeneur related data. From this, we could
+draw a more specific answer to our question that the most popular datasets to construct
+on Kaggle are social topics of discussion or finance related, but there is a powerful
+group of original datasets which do not fit into the broader categories we tested.
+It is this orignality which I believe you would be wisest to tap into, but if you
+are going to lean on some existing ideas then I would suggest popular socioeconomic
+topics as a good starting point for gaining traction. It is important that you
+find ways to wrap your work into a clean report with a good conclusion at the end
+unless of course your report is on report writing. In which case, I lean on the 
+layers of abstraction about exposing my process to justify leaving in less useful
+results and explorations. I hope you found this useful and thank you to Bradford
+for all the things you have taught us and all the kindness you have shown us.

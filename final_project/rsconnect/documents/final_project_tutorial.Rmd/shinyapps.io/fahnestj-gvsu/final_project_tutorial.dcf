@@ -1,0 +1,14 @@
+name: final_project_tutorial
+title: final_project_tutorial
+username:
+account: fahnestj-gvsu
+server: shinyapps.io
+hostUrl: https://api.shinyapps.io/v1
+appId: 8988409
+bundleId: 7153030
+url: https://fahnestj-gvsu.shinyapps.io/final_project_tutorial/
+when: 1682769453.3582
+lastSyncTime: 1682769453.35821
+asMultiple: FALSE
+asStatic: FALSE
+ignoredFiles: source_kaggle.bat
